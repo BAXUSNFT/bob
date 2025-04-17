@@ -1,4 +1,4 @@
-*.ts
+pnpm-lock.yaml
 dist
 !index.ts
 !character.ts
