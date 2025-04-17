@@ -73,6 +73,8 @@ async function startAgent(character: Character, directClient: DirectClient) {
     character.id ??= stringToUuid(character.name);
     character.username ??= character.name;
 
+    console.log('\ncharacter\n', character);
+
     const token = getTokenForProvider(character.modelProvider, character);
     const dataDir = path.join(__dirname, "../data");
 

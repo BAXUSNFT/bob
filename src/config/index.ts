@@ -60,6 +60,7 @@ export function getTokenForProvider(
   provider: ModelProviderName,
   character: Character
 ) {
+  console.log('\nprovider\n', provider);
   switch (provider) {
     case ModelProviderName.OPENAI:
       return (

@@ -1,10 +1,12 @@
 {
-  "name": "Eliza",
+  "name": "Bob",
   "plugins": [],
   "clients": [],
-  "modelProvider": "openrouter",
+  "modelProvider": "openai",
   "settings": {
-    "secrets": {},
+    "secrets": {
+      "OPENAI_API_KEY": "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"
+    },
     "voice": {
       "model": "en_US-hfc_female-medium"
     }
