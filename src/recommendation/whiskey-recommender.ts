@@ -153,50 +153,89 @@ export class WhiskeyRecommender {
   }
 
   private createFeatureVector(profile: UserProfile): number[] {
+    console.log('Creating feature vector for user:', profile.userId);
     const vector: number[] = [];
     
-    // Add spirit type preferences
-    const spiritTypes = Array.from(profile.preferences.spiritTypes.values());
-    vector.push(...spiritTypes);
+    // Define fixed set of spirit types and brands
+    const allSpiritTypes = ['whiskey', 'bourbon', 'scotch', 'rye', 'irish', 'japanese', 'other'];
+    const allBrands = Array.from(new Set(this.whiskeyProfiles.map(w => w.brand))).sort();
     
-    // Add price range features
-    vector.push(
+    // Add spirit type preferences (fixed length)
+    allSpiritTypes.forEach(spiritType => {
+      vector.push(profile.preferences.spiritTypes.get(spiritType) || 0);
+    });
+    
+    // Add price range features (fixed length: 3)
+    const priceFeatures = [
       profile.preferences.priceRange.min,
       profile.preferences.priceRange.max,
       profile.preferences.priceRange.avg
-    );
+    ];
+    vector.push(...priceFeatures);
     
-    // Add proof range features
-    vector.push(
+    // Add proof range features (fixed length: 3)
+    const proofFeatures = [
       profile.preferences.proofRange.min,
       profile.preferences.proofRange.max,
       profile.preferences.proofRange.avg
-    );
+    ];
+    vector.push(...proofFeatures);
     
-    // Add brand preferences
-    const brandPrefs = Array.from(profile.preferences.favoriteBrands.values());
-    vector.push(...brandPrefs);
+    // Add brand preferences (fixed length)
+    allBrands.forEach(brand => {
+      vector.push(profile.preferences.favoriteBrands.get(brand) || 0);
+    });
+    
+    // Log the final vector before normalization
+    console.log('Pre-normalized vector:', vector);
     
     // Normalize the vector
-    return this.normalizeVector(vector);
+    const normalizedVector = this.normalizeVector(vector);
+    console.log('Normalized vector:', normalizedVector);
+    console.log('Vector length:', normalizedVector.length);
+    
+    return normalizedVector;
   }
 
   private trainKNN() {
-    if (this.userProfiles.size < 2) return;
+    console.log('Starting KNN training');
+    if (this.userProfiles.size < 2) {
+        console.log('Not enough user profiles for KNN training');
+        return;
+    }
 
-    // Create feature matrix for KNN using ml-matrix
-    const features: number[][] = [];
-    const labels: number[] = [];
+    try {
+        // Create feature matrix for KNN using ml-matrix
+        const features: number[][] = [];
+        const labels: number[] = [];
+        let vectorLength: number | null = null;
 
-    this.userProfiles.forEach((profile, userId) => {
-      const featureVector = this.createFeatureVector(profile);
-      features.push(featureVector);
-      labels.push(parseInt(userId));
-    });
+        this.userProfiles.forEach((profile, userId) => {
+            console.log(`Processing user profile: ${userId}`);
+            const featureVector = this.createFeatureVector(profile);
+            
+            // Check vector length consistency
+            if (vectorLength === null) {
+                vectorLength = featureVector.length;
+            } else if (vectorLength !== featureVector.length) {
+                throw new Error(`Inconsistent vector length: expected ${vectorLength}, got ${featureVector.length} for user ${userId}`);
+            }
+            
+            features.push(featureVector);
+            labels.push(parseInt(userId));
+        });
 
-    // Convert features to ml-matrix for KNN training
-    const featureMatrix = new Matrix(features);
-    this.knnModel = new mlKnn.KNN(featureMatrix, labels, { k: 3 });
+        console.log('Feature matrix dimensions:', features.length, 'x', features[0]?.length);
+        console.log('Labels:', labels);
+
+        // Convert features to ml-matrix for KNN training
+        const featureMatrix = new Matrix(features);
+        this.knnModel = new mlKnn.KNN(featureMatrix, labels, { k: 3 });
+        console.log('KNN model trained successfully');
+    } catch (error) {
+        console.error('Error during KNN training:', error);
+        throw error;
+    }
   }
 
   public getRecommendations(userId: string, count: number = 3): WhiskeyProfile[] {
