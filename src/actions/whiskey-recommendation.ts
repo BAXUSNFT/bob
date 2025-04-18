@@ -24,9 +24,7 @@ interface BarBottle {
     spirit: string;
     proof: number;
     average_msrp: number;
-    // Other fields omitted for brevity
   };
-  // Other fields omitted for brevity
 }
 class WhiskeyRecommendationHandler {
   private bottleDatabase: any[] = [];
@@ -57,11 +55,11 @@ class WhiskeyRecommendationHandler {
     try {
       console.log(`Setting bottle database with ${bottles.length} bottles`);
       // Filter out any invalid bottle data
-      const validBottles = bottles.filter(bottle => 
+      const validBottles = bottles.filter(bottle =>
         bottle && bottle.id && bottle.name && bottle.spirit_type
       );
       console.log(`Filtered to ${validBottles.length} valid bottles`);
-      
+
       this.bottleDatabase = validBottles;
       this.recommender = new WhiskeyRecommender(validBottles);
       this.isInitialized = true;
@@ -189,7 +187,7 @@ class WhiskeyRecommendationHandler {
       const url = `https://services.baxus.co/api/bar/user/${username}`;
 
       const response = await fetch(url, {
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Accept": "application/json"
         }
@@ -202,20 +200,20 @@ class WhiskeyRecommendationHandler {
 
       const data = await response.json();
       console.log(`Successfully fetched ${data.length} bottles for user: ${username}`);
-      
+
       // Filter out any entries with missing product data
       const validBottles = data.filter((bottle: any) => bottle && bottle.product);
       if (validBottles.length < data.length) {
         console.log(`Filtered out ${data.length - validBottles.length} invalid bottles`);
       }
-      
+
       return validBottles;
     } catch (error) {
       console.error(`Error fetching bottles for user ${username}:`, error);
       return []; // Return empty array on error
     }
   }
-  
+
   // Analyze user collection
   analyzeUserCollection(bottles: BarBottle[]): any {
     try {
@@ -307,7 +305,7 @@ class WhiskeyRecommendationHandler {
       summary += "**Spirit breakdown:**\n";
       const spiritEntries = Object.entries(profile.spiritPreferences)
         .sort((a: any, b: any) => b[1] - a[1]);
-        
+
       if (spiritEntries.length > 0) {
         spiritEntries.forEach(([spirit, count]) => {
           const percentage = ((count as number) / bottles.length * 100).toFixed(1);
@@ -322,7 +320,7 @@ class WhiskeyRecommendationHandler {
       const brandEntries = Object.entries(profile.brandPreferences)
         .sort((a: any, b: any) => b[1] - a[1])
         .slice(0, 3);
-        
+
       if (brandEntries.length > 0) {
         brandEntries.forEach(([brand, count]) => {
           summary += `- ${brand}: ${count} bottles\n`;
@@ -362,7 +360,7 @@ class WhiskeyRecommendationHandler {
 
       // Create an empty ratings map - we don't have actual user ratings in this implementation
       const emptyRatings = new Map<number, number>();
-      
+
       // Update user profile with their collection
       this.recommender.updateUserProfile(username, bottles, emptyRatings);
 
@@ -376,35 +374,47 @@ class WhiskeyRecommendationHandler {
       let response = `*studies your collection intently for a moment, then smiles with confidence*\n\n`;
       response += `Based on your collection and preferences, here are my top 3 recommendations:\n\n`;
 
-      recommendations.forEach((rec, index) => {
+      recommendations.forEach((rec: any, index: number) => {
         response += `${index + 1}. **${rec.name?.replace(/^["']|["']$/g, '') || 'Unknown bottle'}**`;
-        
+
         // Only show price if it's a valid number
         if (rec.avg_msrp && !isNaN(rec.avg_msrp)) {
           response += ` - $${rec.avg_msrp.toFixed(2)}`;
         }
-        
+
         response += `\n`;
-        
+
         // Only show proof if it's a valid number
         if (rec.proof && !isNaN(rec.proof)) {
           response += `   Proof: ${rec.proof}\n`;
         }
-        
+
         if (rec.spirit_type) {
           response += `   Type: ${rec.spirit_type}\n`;
         }
-        
+
         // Add image URL
         if (rec.image_url) {
           response += `   Image: ${rec.image_url}\n`;
         }
-        
+
+        // Add community stats as a separate line - MODIFIED CODE
+        if (rec.wishlist_count || rec.vote_count || rec.bar_count) {
+          response += `   Community: `;
+
+          const stats = [];
+          if (rec.wishlist_count) stats.push(`${rec.wishlist_count.toLocaleString()} wishlists`);
+          if (rec.vote_count) stats.push(`${rec.vote_count.toLocaleString()} votes`);
+          if (rec.bar_count) stats.push(`in ${rec.bar_count.toLocaleString()} collections`);
+
+          response += stats.join(', ') + '\n';
+        }
+
         // Add reasoning based on the recommendation
         if (rec.reasoning) {
           response += `   Why: ${rec.reasoning}\n`;
         }
-        
+
         response += `\n`;
       });
 
@@ -422,28 +432,28 @@ class WhiskeyRecommendationHandler {
     try {
       // Find the bottle in our database if possible
       const lowerName = bottleName.toLowerCase();
-      
+
       // Look for a matching bottle in our database
-      const matchingBottle = this.bottleDatabase.find(bottle => 
+      const matchingBottle = this.bottleDatabase.find(bottle =>
         bottle.name && bottle.name.toLowerCase().includes(lowerName)
       );
-      
+
       if (matchingBottle) {
         let description = `${bottleName} is a ${matchingBottle.spirit_type} `;
-        
+
         if (matchingBottle.proof) {
           description += `at ${matchingBottle.proof} proof. `;
         }
-        
+
         if (matchingBottle.avg_msrp) {
           description += `It typically retails for around $${matchingBottle.avg_msrp.toFixed(2)}. `;
         }
-        
+
         description += `It's known for its distinctive character and would make a fine addition to any collection.`;
-        
+
         return `*eyes light up* Ah! ${description}\n\n*adjusts tie* Anything else you'd like to know about? I've got stories and recommendations for days.`;
       }
-      
+
       // If no match in database, use hardcoded descriptions for a few popular bottles
       if (lowerName.includes("buffalo trace")) {
         return "*swirls glass thoughtfully* Buffalo Trace is a solid, approachable bourbon with notes of vanilla, caramel, and a hint of oak spice. Made at the oldest continuously operating distillery in America, it's remarkably complex for its price point (usually around $30).\n\n*takes small sip* It's my go-to recommendation for bourbon beginners and a reliable staple for any home bar.";
@@ -478,28 +488,28 @@ class WhiskeyRecommendationHandler {
 
       similarBottles.forEach((bottle, index) => {
         response += `${index + 1}. **${bottle.name?.replace(/^["']|["']$/g, '') || 'Unknown bottle'}**`;
-        
+
         // Only show price if it's a valid number
         if (bottle.avg_msrp && !isNaN(bottle.avg_msrp)) {
           response += ` - $${bottle.avg_msrp.toFixed(2)}`;
         }
-        
+
         response += `\n`;
-        
+
         // Only show proof if it's a valid number
         if (bottle.proof && !isNaN(bottle.proof)) {
           response += `   Proof: ${bottle.proof}\n`;
         }
-        
+
         if (bottle.spirit_type) {
           response += `   Type: ${bottle.spirit_type}\n`;
         }
-        
+
         // Add reasoning based on the recommendation
         if (bottle.reasoning) {
           response += `   Why: ${bottle.reasoning}\n`;
         }
-        
+
         response += `\n`;
       });
 

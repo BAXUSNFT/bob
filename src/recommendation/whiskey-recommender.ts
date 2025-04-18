@@ -2,6 +2,7 @@
 
 import natural from 'natural';
 interface WhiskeyProfile {
+  popularity?: number;
   id: number;
   name: string;
   brand: string;
@@ -14,6 +15,10 @@ interface WhiskeyProfile {
   rating?: number;
   reasoning?: string;
   image_url?: string;
+  wishlist_count?: number;
+  vote_count?: number;
+  bar_count?: number;
+  community_stats?: string; 
 }
 
 interface UserProfile {
@@ -199,12 +204,23 @@ export class WhiskeyRecommender {
           // Proof range scoring (0-1)
           const proofScore = this.calculateProofScore(whiskey.proof, userProfile.preferences.proofRange);
 
+          const popularityScore = this.calculatePopularityScore(whiskey.popularity);
+
+          // Community metric scoring (0-1)
+          const wishlistScore = this.calculateCommunityMetricScore(whiskey.wishlist_count);
+          const voteScore = this.calculateCommunityMetricScore(whiskey.vote_count);
+          const barScore = this.calculateCommunityMetricScore(whiskey.bar_count);
+
+          // Combine community scores
+          const communityScore = (wishlistScore + voteScore + barScore) / 3;
           // Combine scores with weights
           score = (
-            spiritScore * 0.3 +
-            brandScore * 0.2 +
-            priceScore * 0.25 +
-            proofScore * 0.25
+            spiritScore * 0.20 +
+            brandScore * 0.15 +
+            priceScore * 0.15 +
+            proofScore * 0.15 +
+            popularityScore * 0.15 +
+            communityScore * 0.20  // Add community score with 20% weight
           );
 
           scores.set(whiskey.id, score);
@@ -221,6 +237,7 @@ export class WhiskeyRecommender {
           const whiskey = this.whiskeyProfiles.find(w => w.id === id);
           if (!whiskey) return null;
 
+          const formattedStats = this.formatCommunityStats(whiskey);
           // Add reasoning based on the scoring factors
           const reasons = [];
 
@@ -243,6 +260,18 @@ export class WhiskeyRecommender {
             whiskey.proof <= userProfile.preferences.proofRange.max) {
             reasons.push(`matches your preferred proof range`);
           }
+          if (!isNaN(whiskey.popularity) && whiskey.popularity > 10000) {
+            reasons.push(`highly rated among whiskey enthusiasts`);
+          }
+
+          // Add community-based reasoning - don't push to the reasons array but show separately for now
+          // if ((whiskey.wishlist_count || 0) > 1000) {
+          //   reasons.push(`on many collectors' wishlists`);
+          // } else if ((whiskey.vote_count || 0) > 1000) {
+          //   reasons.push(`has received significant positive votes from the community`);
+          // } else if ((whiskey.bar_count || 0) > 5000) {
+          //   reasons.push(`found in many enthusiasts' collections`);
+          // }
 
           return {
             ...whiskey,
@@ -254,6 +283,20 @@ export class WhiskeyRecommender {
       console.error('Error getting recommendations:', error);
       return [];
     }
+  }
+
+  private calculateCommunityMetricScore(value: number | undefined): number {
+    if (isNaN(value as number) || value === null || value === undefined) return 0;
+
+    // Normalize the metric using a log scale
+    // This handles the wide range of values while giving higher scores to higher values
+    return Math.min(1, Math.log10(Math.max(1, value)) / 4);
+  }
+
+  private calculatePopularityScore(popularity: number): number {
+    if (isNaN(popularity) || popularity === null || popularity === undefined) return 0;
+    const normalizedScore = Math.min(1, Math.log10(Math.max(1, popularity)) / 5);
+    return normalizedScore;
   }
 
   private calculatePriceScore(price: number, range: { min: number; max: number; avg: number }): number {
@@ -280,6 +323,24 @@ export class WhiskeyRecommender {
     // Otherwise, calculate how far it is from the average
     const deviation = Math.abs(proof - range.avg) / (range.avg || 1);
     return Math.max(0, 1 - deviation);
+  }
+
+  private formatCommunityStats(whiskey: WhiskeyProfile): string {
+    const stats = [];
+
+    if (whiskey.wishlist_count !== undefined && whiskey.wishlist_count > 0) {
+      stats.push(`${whiskey.wishlist_count.toLocaleString()} wishlist adds`);
+    }
+
+    if (whiskey.vote_count !== undefined && whiskey.vote_count > 0) {
+      stats.push(`${whiskey.vote_count.toLocaleString()} community votes`);
+    }
+
+    if (whiskey.bar_count !== undefined && whiskey.bar_count > 0) {
+      stats.push(`in ${whiskey.bar_count.toLocaleString()} collections`);
+    }
+
+    return stats.length > 0 ? `Community stats: ${stats.join(', ')}` : '';
   }
 
   public getSimilarBottles(bottleName: string, count: number = 3): WhiskeyProfile[] {
