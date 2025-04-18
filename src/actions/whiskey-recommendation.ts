@@ -33,6 +33,25 @@ class WhiskeyRecommendationHandler {
   private bottleDatabase: any[] = [];
   private recommender: WhiskeyRecommender | null = null;
   private isInitialized: boolean = false;
+  private initializationPromise: Promise<void> | null = null;
+
+  constructor() {
+    this.initializationPromise = this.initialize();
+  }
+
+  private async initialize() {
+    try {
+      const bottles = await loadBottleDataset();
+      if (bottles.length > 0) {
+        console.log(`Loaded ${bottles.length} bottles for whiskey recommendations`);
+        this.setBottleDatabase(bottles);
+      } else {
+        console.error("Failed to load bottle dataset");
+      }
+    } catch (error) {
+      console.error("Error during initialization:", error);
+    }
+  }
 
   // Set the bottle database
   setBottleDatabase(bottles: any[]) {
@@ -45,12 +64,21 @@ class WhiskeyRecommendationHandler {
 
   // Process incoming messages and generate responses
   async processMessage(message: string, runtime: IAgentRuntime): Promise<string> {
+    // Wait for initialization to complete
+    if (this.initializationPromise) {
+      await this.initializationPromise;
+    }
+
+    if (!this.isInitialized) {
+      return "*adjusts glasses* I'm still getting my whiskey knowledge organized. Give me just a moment to set up my recommendation engine...";
+    }
+
     // Determine what type of whiskey request this is
     const requestContext = `
       Extract the request type from the user's message.
       The message is ${message}
       The possible request types are 'ANALYZE' (for analyzing a collection), 'RECOMMEND' (for recommending bottles), 
-      'INFO' (for information about a specific bottle), or 'GENERAL' (for general whiskey talk).
+      'INFO' (for information about a specific bottle), 'SIMILAR' (for finding similar bottles), or 'GENERAL' (for general whiskey talk).
       Only respond with the request type, do not include any other text.`;
 
     const requestType = await generateText({
@@ -79,13 +107,15 @@ class WhiskeyRecommendationHandler {
 
     console.log('username', username);
 
-    // For bottle info requests, extract the bottle name
+    // For bottle info or similar requests, extract the bottle name
     let bottleName = "";
-    if (requestType === "INFO") {
+    if (requestType === "INFO" || requestType === "SIMILAR") {
       const bottleContext = `
           Extract the name of the bottle from the user's message.
           The message is ${message}
-          If the message is asking about a specific bottle, extract the bottle name.
+          If the message is asking about a specific bottle or similar bottles, extract the bottle name.
+          For example, if the message is "can you recommend more bottles similar to EH Taylor?", extract "E.H. Taylor".
+          If the message contains "EH Taylor" or "E.H. Taylor", extract it exactly as "E.H. Taylor".
           Only respond with the bottle name, do not include any other text.`;
 
       bottleName = await generateText({
@@ -95,7 +125,12 @@ class WhiskeyRecommendationHandler {
         stop: ["\n"],
       });
 
-      console.log('bottleName', bottleName);
+      // Clean up the bottle name
+      bottleName = bottleName.trim()
+        .replace(/^["']|["']$/g, '') // Remove quotes
+        .replace(/\s+/g, ' ') // Normalize whitespace
+
+      console.log('Extracted bottleName:', bottleName);
     }
 
     try {
@@ -105,6 +140,8 @@ class WhiskeyRecommendationHandler {
         return await this.handleRecommendBottles(username);
       } else if (requestType === "INFO" && bottleName) {
         return this.handleBottleInfo(bottleName);
+      } else if (requestType === "SIMILAR" && bottleName) {
+        return this.handleSimilarBottles(bottleName);
       } else {
         return ""; // Let the language model handle it
       }
@@ -310,6 +347,55 @@ class WhiskeyRecommendationHandler {
     }
 
     return `*eyes light up* Ah! ${description}\n\n*adjusts tie* Anything else you'd like to know about? I've got stories and recommendations for days.`;
+  }
+
+  // Handle similar bottle requests
+  async handleSimilarBottles(bottleName: string): Promise<string> {
+    if (!this.isInitialized) {
+      return "*adjusts glasses* I'm still getting my whiskey knowledge organized. Give me just a moment to set up my recommendation engine...";
+    }
+
+    if (!this.recommender) {
+      return "*adjusts tie nervously* I seem to be having trouble accessing my whiskey database. Let me try to sort this out...";
+    }
+
+    const similarBottles = this.recommender.getSimilarBottles(bottleName, 3);
+
+    if (similarBottles.length === 0) {
+      return `*adjusts glasses* I'm not familiar with ${bottleName}, darling. Could you tell me more about it? Or perhaps you'd like to try something else?`;
+    }
+
+    let response = `*studies the bottle thoughtfully, then nods with confidence*\n\n`;
+    response += `If you enjoy ${bottleName}, you might want to try these similar bottles:\n\n`;
+
+    similarBottles.forEach((bottle, index) => {
+      response += `${index + 1}. **${bottle.name.replace(/^["']|["']$/g, '')}**`;
+      
+      // Only show price if it's a valid number
+      if (!isNaN(bottle.avg_msrp)) {
+        response += ` - $${bottle.avg_msrp}`;
+      }
+      
+      response += `\n`;
+      
+      // Only show proof if it's a valid number
+      if (!isNaN(bottle.proof)) {
+        response += `   Proof: ${bottle.proof}\n`;
+      }
+      
+      response += `   Type: ${bottle.spirit_type}\n`;
+      
+      // Add reasoning based on the recommendation
+      if (bottle.reasoning) {
+        response += `   Why: ${bottle.reasoning}\n`;
+      }
+      
+      response += `\n`;
+    });
+
+    response += `*takes a slow sip from flask* Any of these catch your eye, gorgeous? I'm happy to tell you more about any of them or suggest alternatives if these aren't quite what you're looking for.`;
+
+    return response;
   }
 }
 

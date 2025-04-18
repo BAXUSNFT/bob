@@ -327,4 +327,120 @@ export class WhiskeyRecommender {
 
     return count > 0 ? totalSimilarity / count : 0;
   }
+
+  public getSimilarBottles(bottleName: string, count: number = 3): WhiskeyProfile[] {
+    if (!bottleName || !this.whiskeyProfiles || this.whiskeyProfiles.length === 0) {
+      return [];
+    }
+
+    // Clean and normalize the search name
+    const searchName = bottleName.toLowerCase().trim()
+      .replace(/[.,]/g, '') // Remove periods and commas
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .replace(/^["']|["']$/g, ''); // Remove quotes
+
+    // First try exact match
+    let targetBottle = this.whiskeyProfiles.find(w => {
+      if (!w || !w.name) return false;
+      const bottleNameLower = w.name.toLowerCase()
+        .replace(/[.,]/g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/^["']|["']$/g, '');
+      return bottleNameLower === searchName;
+    });
+
+    // If no exact match, try partial matches
+    if (!targetBottle) {
+      targetBottle = this.whiskeyProfiles.find(w => {
+        if (!w || !w.name || !w.brand) return false;
+        
+        const bottleNameLower = w.name.toLowerCase()
+          .replace(/[.,]/g, '')
+          .replace(/\s+/g, ' ')
+          .replace(/^["']|["']$/g, '');
+        
+        const brandNameLower = w.brand.toLowerCase()
+          .replace(/[.,]/g, '')
+          .replace(/\s+/g, ' ')
+          .replace(/^["']|["']$/g, '');
+
+        // Check for various match types
+        return bottleNameLower.includes(searchName) || 
+               searchName.includes(bottleNameLower) ||
+               brandNameLower === searchName ||
+               // Handle special cases like "Blanton's"
+               bottleNameLower.startsWith(searchName) ||
+               brandNameLower.startsWith(searchName);
+      });
+    }
+
+    if (!targetBottle) {
+      console.log(`No matching bottle found for: ${bottleName}`);
+      return [];
+    }
+
+    console.log(`Found target bottle: ${targetBottle.name}`);
+
+    // Calculate similarity scores for all bottles
+    const scores = new Map<number, number>();
+    
+    this.whiskeyProfiles.forEach(whiskey => {
+      if (!whiskey || whiskey.id === targetBottle!.id) return; // Skip the target bottle and invalid entries
+      
+      // Calculate similarity based on content
+      const contentSimilarity = this.calculateContentSimilarity(targetBottle!, whiskey);
+      
+      // Calculate similarity based on proof - handle undefined values
+      const proofSimilarity = !isNaN(targetBottle!.proof) && !isNaN(whiskey.proof) 
+        ? this.calculateProofSimilarity(targetBottle!.proof, whiskey.proof)
+        : 0;
+      
+      // Calculate similarity based on price - handle undefined values
+      const priceSimilarity = !isNaN(targetBottle!.avg_msrp) && !isNaN(whiskey.avg_msrp)
+        ? this.calculatePriceSimilarity(targetBottle!.avg_msrp, whiskey.avg_msrp)
+        : 0;
+      
+      // Combine scores with weights
+      const score = (
+        contentSimilarity * 0.5 +
+        proofSimilarity * 0.25 +
+        priceSimilarity * 0.25
+      );
+      
+      scores.set(whiskey.id, score);
+    });
+
+    // Sort by score and return top recommendations
+    const recommendations = Array.from(scores.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, count)
+      .map(([id]) => {
+        const whiskey = this.whiskeyProfiles.find(w => w.id === id)!;
+        return {
+          ...whiskey,
+          reasoning: `Similar to ${targetBottle!.name} in terms of ${
+            whiskey.spirit_type === targetBottle!.spirit_type ? 'spirit type, ' : ''
+          }${
+            Math.abs(whiskey.proof - targetBottle!.proof) < 10 ? 'proof range, ' : ''
+          }${
+            Math.abs(whiskey.avg_msrp - targetBottle!.avg_msrp) < 20 ? 'price point, ' : ''
+          }and flavor profile`.replace(/, and/, ' and')
+        };
+      });
+
+    console.log(`Found ${recommendations.length} similar bottles`);
+    return recommendations;
+  }
+
+  private calculateProofSimilarity(proof1: number, proof2: number): number {
+    if (isNaN(proof1) || isNaN(proof2)) return 0;
+    const diff = Math.abs(proof1 - proof2);
+    return Math.max(0, 1 - diff / 100); // Normalize by 100 proof
+  }
+
+  private calculatePriceSimilarity(price1: number, price2: number): number {
+    if (isNaN(price1) || isNaN(price2)) return 0;
+    const diff = Math.abs(price1 - price2);
+    return Math.max(0, 1 - diff / 100); // Normalize by $100
+  }
 } 
