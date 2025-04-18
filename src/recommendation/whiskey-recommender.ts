@@ -1,9 +1,6 @@
-// @ts-ignore
-import natural from 'natural';
-import { Matrix } from 'ml-matrix';
-// @ts-ignore
-import mlKnn from 'ml-knn';
+// Updated whiskey-recommender.ts with content-based filtering only
 
+import natural from 'natural';
 interface WhiskeyProfile {
   id: number;
   name: string;
@@ -34,7 +31,6 @@ export class WhiskeyRecommender {
   private tfidf: any;
   private whiskeyProfiles: WhiskeyProfile[];
   private userProfiles: Map<string, UserProfile>;
-  private knnModel: any;
 
   constructor(whiskeyProfiles: WhiskeyProfile[]) {
     this.whiskeyProfiles = whiskeyProfiles;
@@ -58,418 +54,368 @@ export class WhiskeyRecommender {
   }
 
   public updateUserProfile(userId: string, bottles: any[], ratings: Map<number, number>) {
-    const spiritTypes = new Map<string, number>();
-    const favoriteBrands = new Map<string, number>();
-    let minPrice = Number.MAX_VALUE;
-    let maxPrice = 0;
-    let totalPrice = 0;
-    let minProof = Number.MAX_VALUE;
-    let maxProof = 0;
-    let totalProof = 0;
-    let bottleCount = 0;
+    try {
+      console.log(`Updating profile for user ${userId} with ${bottles.length} bottles`);
 
-    bottles.forEach(bottle => {
-      const product = bottle.product;
-      
-      // Update spirit type preferences
-      spiritTypes.set(product.spirit, (spiritTypes.get(product.spirit) || 0) + 1);
-      
-      // Update brand preferences
-      favoriteBrands.set(product.brand, (favoriteBrands.get(product.brand) || 0) + 1);
-      
-      // Update price range
-      if (product.average_msrp) {
-        minPrice = Math.min(minPrice, product.average_msrp);
-        maxPrice = Math.max(maxPrice, product.average_msrp);
-        totalPrice += product.average_msrp;
-        bottleCount++;
-      }
-      
-      // Update proof range
-      if (product.proof) {
-        minProof = Math.min(minProof, product.proof);
-        maxProof = Math.max(maxProof, product.proof);
-        totalProof += product.proof;
-      }
-    });
+      const spiritTypes = new Map<string, number>();
+      const favoriteBrands = new Map<string, number>();
+      let minPrice = Number.MAX_VALUE;
+      let maxPrice = 0;
+      let totalPrice = 0;
+      let minProof = Number.MAX_VALUE;
+      let maxProof = 0;
+      let totalProof = 0;
+      let bottleCount = 0;
 
-    const avgPrice = bottleCount > 0 ? totalPrice / bottleCount : 0;
-    const avgProof = bottles.length > 0 ? totalProof / bottles.length : 0;
+      // Safely process each bottle
+      bottles.forEach(bottle => {
+        if (!bottle.product) return;
+        const product = bottle.product;
 
-    this.userProfiles.set(userId, {
-      userId,
-      preferences: {
-        spiritTypes,
-        priceRange: { min: minPrice, max: maxPrice, avg: avgPrice },
-        proofRange: { min: minProof, max: maxProof, avg: avgProof },
-        favoriteBrands
-      },
-      ratings
-    });
+        // Update spirit type preferences (safely)
+        if (product.spirit) {
+          spiritTypes.set(product.spirit, (spiritTypes.get(product.spirit) || 0) + 1);
+        }
 
-    // After updating user profile, train KNN if we have enough users
-    this.trainKNN();
+        // Update brand preferences (safely)
+        if (product.brand) {
+          favoriteBrands.set(product.brand, (favoriteBrands.get(product.brand) || 0) + 1);
+        }
+
+        // Update price range (safely)
+        if (product.average_msrp && !isNaN(product.average_msrp)) {
+          minPrice = Math.min(minPrice, product.average_msrp);
+          maxPrice = Math.max(maxPrice, product.average_msrp);
+          totalPrice += product.average_msrp;
+          bottleCount++;
+        }
+
+        // Update proof range (safely)
+        if (product.proof && !isNaN(product.proof)) {
+          minProof = Math.min(minProof, product.proof);
+          maxProof = Math.max(maxProof, product.proof);
+          totalProof += product.proof;
+        }
+      });
+
+      // Handle edge cases
+      if (minPrice === Number.MAX_VALUE) minPrice = 0;
+      if (minProof === Number.MAX_VALUE) minProof = 0;
+
+      const avgPrice = bottleCount > 0 ? totalPrice / bottleCount : 0;
+      const avgProof = bottles.length > 0 ? totalProof / bottles.length : 0;
+
+      this.userProfiles.set(userId, {
+        userId,
+        preferences: {
+          spiritTypes,
+          priceRange: { min: minPrice, max: maxPrice, avg: avgPrice },
+          proofRange: { min: minProof, max: maxProof, avg: avgProof },
+          favoriteBrands
+        },
+        ratings
+      });
+
+      console.log('User profile successfully updated');
+    } catch (error) {
+      console.error('Error updating user profile:', error);
+      throw error;
+    }
   }
 
   private calculateContentSimilarity(whiskey1: WhiskeyProfile, whiskey2: WhiskeyProfile): number {
-    // Find the indices of the whiskeys in our database
-    const index1 = this.whiskeyProfiles.findIndex(w => w.id === whiskey1.id);
-    const index2 = this.whiskeyProfiles.findIndex(w => w.id === whiskey2.id);
-
-    if (index1 === -1 || index2 === -1) {
-      return 0; // Return 0 similarity if either whiskey is not found
-    }
-
-    // Get the document text for both whiskeys
-    const doc1 = [
-      whiskey1.name,
-      whiskey1.brand,
-      whiskey1.spirit_type,
-      whiskey1.tasting_notes?.join(' ') || '',
-      whiskey1.region || ''
-    ].join(' ');
-
-    const doc2 = [
-      whiskey2.name,
-      whiskey2.brand,
-      whiskey2.spirit_type,
-      whiskey2.tasting_notes?.join(' ') || '',
-      whiskey2.region || ''
-    ].join(' ');
-
-    // Calculate similarity by comparing terms
-    let similarity = 0;
-    const terms = doc2.split(' ');
-    terms.forEach(term => {
-      similarity += this.tfidf.tfidf(term, index1);
-    });
-
-    return similarity / terms.length; // Normalize by number of terms
-  }
-
-  private normalizeVector(vector: number[]): number[] {
-    const magnitude = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
-    return magnitude === 0 ? vector : vector.map(val => val / magnitude);
-  }
-
-  private createFeatureVector(profile: UserProfile): number[] {
-    console.log('Creating feature vector for user:', profile.userId);
-    const vector: number[] = [];
-    
-    // Define fixed set of spirit types and brands
-    const allSpiritTypes = ['whiskey', 'bourbon', 'scotch', 'rye', 'irish', 'japanese', 'other'];
-    const allBrands = Array.from(new Set(this.whiskeyProfiles.map(w => w.brand))).sort();
-    
-    // Add spirit type preferences (fixed length)
-    allSpiritTypes.forEach(spiritType => {
-      vector.push(profile.preferences.spiritTypes.get(spiritType) || 0);
-    });
-    
-    // Add price range features (fixed length: 3)
-    const priceFeatures = [
-      profile.preferences.priceRange.min,
-      profile.preferences.priceRange.max,
-      profile.preferences.priceRange.avg
-    ];
-    vector.push(...priceFeatures);
-    
-    // Add proof range features (fixed length: 3)
-    const proofFeatures = [
-      profile.preferences.proofRange.min,
-      profile.preferences.proofRange.max,
-      profile.preferences.proofRange.avg
-    ];
-    vector.push(...proofFeatures);
-    
-    // Add brand preferences (fixed length)
-    allBrands.forEach(brand => {
-      vector.push(profile.preferences.favoriteBrands.get(brand) || 0);
-    });
-    
-    // Log the final vector before normalization
-    console.log('Pre-normalized vector:', vector);
-    
-    // Normalize the vector
-    const normalizedVector = this.normalizeVector(vector);
-    console.log('Normalized vector:', normalizedVector);
-    console.log('Vector length:', normalizedVector.length);
-    
-    return normalizedVector;
-  }
-
-  private trainKNN() {
-    console.log('Starting KNN training');
-    if (this.userProfiles.size < 2) {
-        console.log('Not enough user profiles for KNN training');
-        return;
-    }
-
     try {
-        // Create feature matrix for KNN using ml-matrix
-        const features: number[][] = [];
-        const labels: number[] = [];
-        let vectorLength: number | null = null;
+      // Find the indices of the whiskeys in our database
+      const index1 = this.whiskeyProfiles.findIndex(w => w.id === whiskey1.id);
+      const index2 = this.whiskeyProfiles.findIndex(w => w.id === whiskey2.id);
 
-        this.userProfiles.forEach((profile, userId) => {
-            console.log(`Processing user profile: ${userId}`);
-            const featureVector = this.createFeatureVector(profile);
-            
-            // Check vector length consistency
-            if (vectorLength === null) {
-                vectorLength = featureVector.length;
-            } else if (vectorLength !== featureVector.length) {
-                throw new Error(`Inconsistent vector length: expected ${vectorLength}, got ${featureVector.length} for user ${userId}`);
-            }
-            
-            features.push(featureVector);
-            labels.push(parseInt(userId));
-        });
+      if (index1 === -1 || index2 === -1) {
+        return 0; // Return 0 similarity if either whiskey is not found
+      }
 
-        console.log('Feature matrix dimensions:', features.length, 'x', features[0]?.length);
-        console.log('Labels:', labels);
+      // Get the document text for both whiskeys
+      const doc1 = [
+        whiskey1.name || '',
+        whiskey1.brand || '',
+        whiskey1.spirit_type || '',
+        whiskey1.tasting_notes?.join(' ') || '',
+        whiskey1.region || ''
+      ].join(' ');
 
-        // Convert features to ml-matrix for KNN training
-        const featureMatrix = new Matrix(features);
-        this.knnModel = new mlKnn.KNN(featureMatrix, labels, { k: 3 });
-        console.log('KNN model trained successfully');
+      const doc2 = [
+        whiskey2.name || '',
+        whiskey2.brand || '',
+        whiskey2.spirit_type || '',
+        whiskey2.tasting_notes?.join(' ') || '',
+        whiskey2.region || ''
+      ].join(' ');
+
+      // Calculate similarity by comparing terms
+      let similarity = 0;
+      const terms = doc2.split(' ').filter(t => t.length > 0);
+
+      if (terms.length === 0) return 0;
+
+      terms.forEach(term => {
+        similarity += this.tfidf.tfidf(term, index1);
+      });
+
+      return similarity / terms.length; // Normalize by number of terms
     } catch (error) {
-        console.error('Error during KNN training:', error);
-        throw error;
+      console.error('Error calculating content similarity:', error);
+      return 0;
     }
   }
 
   public getRecommendations(userId: string, count: number = 3): WhiskeyProfile[] {
-    const userProfile = this.userProfiles.get(userId);
-    if (!userProfile) return [];
+    try {
+      console.log(`Getting recommendations for user ${userId}`);
+      const userProfile = this.userProfiles.get(userId);
+      if (!userProfile) {
+        console.log('No user profile found');
+        return [];
+      }
 
-    // Get similar users if KNN is trained
-    let similarUsers: string[] = [];
-    if (this.knnModel) {
-      const userVector = this.createFeatureVector(userProfile);
-      const userMatrix = new Matrix([userVector]);
-      similarUsers = this.knnModel.predict(userMatrix);
-    }
+      // Calculate scores for each whiskey using a content-based approach
+      const scores = new Map<number, number>();
 
-    // Calculate scores for each whiskey
-    const scores = new Map<number, number>();
-    
-    this.whiskeyProfiles.forEach(whiskey => {
-      let score = 0;
-      
-      // Content-based scoring
-      const spiritPref = userProfile.preferences.spiritTypes.get(whiskey.spirit_type) || 0;
-      const brandPref = userProfile.preferences.favoriteBrands.get(whiskey.brand) || 0;
-      
-      // Price range scoring
-      const priceScore = this.calculatePriceScore(whiskey.avg_msrp, userProfile.preferences.priceRange);
-      
-      // Proof range scoring
-      const proofScore = this.calculateProofScore(whiskey.proof, userProfile.preferences.proofRange);
-      
-      // Collaborative filtering score
-      const collabScore = this.calculateCollaborativeScore(whiskey.id, similarUsers);
-      
-      // Content similarity score
-      const contentScore = this.calculateContentSimilarityScore(whiskey, userProfile);
-      
-      // Combine scores with weights
-      score = (
-        spiritPref * 0.2 +
-        brandPref * 0.15 +
-        priceScore * 0.2 +
-        proofScore * 0.15 +
-        collabScore * 0.15 +
-        contentScore * 0.15
-      );
-      
-      scores.set(whiskey.id, score);
-    });
+      this.whiskeyProfiles.forEach(whiskey => {
+        if (!whiskey || !whiskey.id) return;
 
-    // Sort by score and return top recommendations
-    return Array.from(scores.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, count)
-      .map(([id]) => {
-        const whiskey = this.whiskeyProfiles.find(w => w.id === id)!;
-        // Add reasoning based on the scoring factors
-        const reasons = [];
-        
-        if (userProfile.preferences.spiritTypes.has(whiskey.spirit_type)) {
-          reasons.push(`matches your preference for ${whiskey.spirit_type}`);
+        try {
+          let score = 0;
+
+          // Spirit type preference score (0-1)
+          const spiritScore = (userProfile.preferences.spiritTypes.get(whiskey.spirit_type) || 0) /
+            (Math.max(...Array.from(userProfile.preferences.spiritTypes.values())) || 1);
+
+          // Brand preference score (0-1)
+          const brandScore = (userProfile.preferences.favoriteBrands.get(whiskey.brand) || 0) /
+            (Math.max(...Array.from(userProfile.preferences.favoriteBrands.values())) || 1);
+
+          // Price range scoring (0-1)
+          const priceScore = this.calculatePriceScore(whiskey.avg_msrp, userProfile.preferences.priceRange);
+
+          // Proof range scoring (0-1)
+          const proofScore = this.calculateProofScore(whiskey.proof, userProfile.preferences.proofRange);
+
+          // Combine scores with weights
+          score = (
+            spiritScore * 0.3 +
+            brandScore * 0.2 +
+            priceScore * 0.25 +
+            proofScore * 0.25
+          );
+
+          scores.set(whiskey.id, score);
+        } catch (error) {
+          console.error(`Error scoring whiskey ${whiskey.id}:`, error);
         }
-        
-        if (userProfile.preferences.favoriteBrands.has(whiskey.brand)) {
-          reasons.push(`from your favorite brand ${whiskey.brand}`);
-        }
-        
-        if (whiskey.avg_msrp >= userProfile.preferences.priceRange.min && 
-            whiskey.avg_msrp <= userProfile.preferences.priceRange.max) {
-          reasons.push(`fits your price range`);
-        }
-        
-        if (!isNaN(whiskey.proof) && 
-            whiskey.proof >= userProfile.preferences.proofRange.min && 
-            whiskey.proof <= userProfile.preferences.proofRange.max) {
-          reasons.push(`matches your preferred proof range`);
-        }
-        
-        return {
-          ...whiskey,
-          reasoning: reasons.length > 0 ? reasons.join(', ') : 'a well-balanced choice based on your collection'
-        };
       });
+
+      // Sort by score and return top recommendations
+      return Array.from(scores.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, count)
+        .map(([id]) => {
+          const whiskey = this.whiskeyProfiles.find(w => w.id === id);
+          if (!whiskey) return null;
+
+          // Add reasoning based on the scoring factors
+          const reasons = [];
+
+          if (userProfile.preferences.spiritTypes.has(whiskey.spirit_type)) {
+            reasons.push(`matches your preference for ${whiskey.spirit_type}`);
+          }
+
+          if (userProfile.preferences.favoriteBrands.has(whiskey.brand)) {
+            reasons.push(`from your favorite brand ${whiskey.brand}`);
+          }
+
+          if (!isNaN(whiskey.avg_msrp) &&
+            whiskey.avg_msrp >= userProfile.preferences.priceRange.min &&
+            whiskey.avg_msrp <= userProfile.preferences.priceRange.max) {
+            reasons.push(`fits your price range`);
+          }
+
+          if (!isNaN(whiskey.proof) &&
+            whiskey.proof >= userProfile.preferences.proofRange.min &&
+            whiskey.proof <= userProfile.preferences.proofRange.max) {
+            reasons.push(`matches your preferred proof range`);
+          }
+
+          return {
+            ...whiskey,
+            reasoning: reasons.length > 0 ? reasons.join(', ') : 'a well-balanced choice based on your collection'
+          };
+        })
+        .filter(item => item !== null) as WhiskeyProfile[];
+    } catch (error) {
+      console.error('Error getting recommendations:', error);
+      return [];
+    }
   }
 
   private calculatePriceScore(price: number, range: { min: number; max: number; avg: number }): number {
+    if (isNaN(price)) return 0;
+
+    // If in range, give a high score
     if (price <= range.max && price >= range.min) {
       return 1;
     }
-    const deviation = Math.abs(price - range.avg) / range.avg;
+
+    // Otherwise, calculate how far it is from the average
+    const deviation = Math.abs(price - range.avg) / (range.avg || 1);
     return Math.max(0, 1 - deviation);
   }
 
   private calculateProofScore(proof: number, range: { min: number; max: number; avg: number }): number {
+    if (isNaN(proof)) return 0;
+
+    // If in range, give a high score
     if (proof <= range.max && proof >= range.min) {
       return 1;
     }
-    const deviation = Math.abs(proof - range.avg) / range.avg;
+
+    // Otherwise, calculate how far it is from the average
+    const deviation = Math.abs(proof - range.avg) / (range.avg || 1);
     return Math.max(0, 1 - deviation);
   }
 
-  private calculateCollaborativeScore(whiskeyId: number, similarUsers: string[]): number {
-    let totalRating = 0;
-    let ratingCount = 0;
-
-    similarUsers.forEach(userId => {
-      const userProfile = this.userProfiles.get(userId);
-      if (userProfile && userProfile.ratings.has(whiskeyId)) {
-        totalRating += userProfile.ratings.get(whiskeyId)!;
-        ratingCount++;
-      }
-    });
-
-    return ratingCount > 0 ? totalRating / ratingCount : 0;
-  }
-
-  private calculateContentSimilarityScore(whiskey: WhiskeyProfile, userProfile: UserProfile): number {
-    // Calculate similarity with each bottle in user's collection
-    let totalSimilarity = 0;
-    let count = 0;
-
-    // Get all bottles from user's ratings
-    userProfile.ratings.forEach((rating, whiskeyId) => {
-      const userWhiskey = this.whiskeyProfiles.find(w => w.id === whiskeyId);
-      if (userWhiskey) {
-        totalSimilarity += this.calculateContentSimilarity(whiskey, userWhiskey);
-        count++;
-      }
-    });
-
-    return count > 0 ? totalSimilarity / count : 0;
-  }
-
   public getSimilarBottles(bottleName: string, count: number = 3): WhiskeyProfile[] {
-    if (!bottleName || !this.whiskeyProfiles || this.whiskeyProfiles.length === 0) {
-      return [];
-    }
+    try {
+      if (!bottleName || !this.whiskeyProfiles || this.whiskeyProfiles.length === 0) {
+        return [];
+      }
 
-    // Clean and normalize the search name
-    const searchName = bottleName.toLowerCase().trim()
-      .replace(/[.,]/g, '') // Remove periods and commas
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .replace(/^["']|["']$/g, ''); // Remove quotes
+      // Clean and normalize the search name
+      const searchName = bottleName.toLowerCase().trim()
+        .replace(/[.,]/g, '') // Remove periods and commas
+        .replace(/\s+/g, ' ') // Normalize whitespace
+        .replace(/^["']|["']$/g, ''); // Remove quotes
 
-    // First try exact match
-    let targetBottle = this.whiskeyProfiles.find(w => {
-      if (!w || !w.name) return false;
-      const bottleNameLower = w.name.toLowerCase()
-        .replace(/[.,]/g, '')
-        .replace(/\s+/g, ' ')
-        .replace(/^["']|["']$/g, '');
-      return bottleNameLower === searchName;
-    });
-
-    // If no exact match, try partial matches
-    if (!targetBottle) {
-      targetBottle = this.whiskeyProfiles.find(w => {
-        if (!w || !w.name || !w.brand) return false;
-        
+      // First try exact match
+      let targetBottle = this.whiskeyProfiles.find(w => {
+        if (!w || !w.name) return false;
         const bottleNameLower = w.name.toLowerCase()
           .replace(/[.,]/g, '')
           .replace(/\s+/g, ' ')
           .replace(/^["']|["']$/g, '');
-        
-        const brandNameLower = w.brand.toLowerCase()
-          .replace(/[.,]/g, '')
-          .replace(/\s+/g, ' ')
-          .replace(/^["']|["']$/g, '');
-
-        // Check for various match types
-        return bottleNameLower.includes(searchName) || 
-               searchName.includes(bottleNameLower) ||
-               brandNameLower === searchName ||
-               // Handle special cases like "Blanton's"
-               bottleNameLower.startsWith(searchName) ||
-               brandNameLower.startsWith(searchName);
+        return bottleNameLower === searchName;
       });
-    }
 
-    if (!targetBottle) {
-      console.log(`No matching bottle found for: ${bottleName}`);
+      // If no exact match, try partial matches
+      if (!targetBottle) {
+        targetBottle = this.whiskeyProfiles.find(w => {
+          if (!w || !w.name || !w.brand) return false;
+
+          const bottleNameLower = w.name.toLowerCase()
+            .replace(/[.,]/g, '')
+            .replace(/\s+/g, ' ')
+            .replace(/^["']|["']$/g, '');
+
+          const brandNameLower = w.brand.toLowerCase()
+            .replace(/[.,]/g, '')
+            .replace(/\s+/g, ' ')
+            .replace(/^["']|["']$/g, '');
+
+          // Check for various match types
+          return bottleNameLower.includes(searchName) ||
+            searchName.includes(bottleNameLower) ||
+            brandNameLower === searchName ||
+            // Handle special cases like "Blanton's"
+            bottleNameLower.startsWith(searchName) ||
+            brandNameLower.startsWith(searchName);
+        });
+      }
+
+      if (!targetBottle) {
+        console.log(`No matching bottle found for: ${bottleName}`);
+        return [];
+      }
+
+      console.log(`Found target bottle: ${targetBottle.name}`);
+
+      // Calculate similarity scores for all bottles
+      const scores = new Map<number, number>();
+
+      this.whiskeyProfiles.forEach(whiskey => {
+        if (!whiskey || whiskey.id === targetBottle!.id) return; // Skip the target bottle and invalid entries
+
+        // Spirit type match score (exact match = 1, otherwise 0)
+        const spiritMatch = (whiskey.spirit_type === targetBottle!.spirit_type) ? 1 : 0;
+
+        // Calculate similarity based on proof - handle undefined values
+        const proofSimilarity = !isNaN(targetBottle!.proof) && !isNaN(whiskey.proof)
+          ? this.calculateProofSimilarity(targetBottle!.proof, whiskey.proof)
+          : 0;
+
+        // Calculate similarity based on price - handle undefined values
+        const priceSimilarity = !isNaN(targetBottle!.avg_msrp) && !isNaN(whiskey.avg_msrp)
+          ? this.calculatePriceSimilarity(targetBottle!.avg_msrp, whiskey.avg_msrp)
+          : 0;
+
+        // Brand match score (exact match = 1, otherwise 0)
+        const brandMatch = (whiskey.brand === targetBottle!.brand) ? 1 : 0;
+
+        // Combine scores with weights
+        const score = (
+          spiritMatch * 0.35 +
+          proofSimilarity * 0.25 +
+          priceSimilarity * 0.25 +
+          brandMatch * 0.15
+        );
+
+        scores.set(whiskey.id, score);
+      });
+
+      // Sort by score and return top recommendations
+      return Array.from(scores.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, count)
+        .map(([id]) => {
+          const whiskey = this.whiskeyProfiles.find(w => w.id === id)!;
+
+          // Build reasoning text
+          const similarities = [];
+
+          if (whiskey.spirit_type === targetBottle!.spirit_type) {
+            similarities.push('spirit type');
+          }
+
+          if (Math.abs((whiskey.proof || 0) - (targetBottle!.proof || 0)) < 10) {
+            similarities.push('proof range');
+          }
+
+          if (Math.abs((whiskey.avg_msrp || 0) - (targetBottle!.avg_msrp || 0)) < 20) {
+            similarities.push('price point');
+          }
+
+          if (whiskey.brand === targetBottle!.brand) {
+            similarities.push('brand');
+          }
+
+          // Add 'flavor profile' as a catch-all
+          similarities.push('flavor profile');
+
+          // Format the reasoning text
+          let reasoning = `Similar to ${targetBottle!.name} in terms of `;
+          if (similarities.length > 1) {
+            const lastSimilarity = similarities.pop();
+            reasoning += similarities.join(', ') + ' and ' + lastSimilarity;
+          } else {
+            reasoning += similarities[0];
+          }
+
+          return {
+            ...whiskey,
+            reasoning
+          };
+        });
+    } catch (error) {
+      console.error('Error finding similar bottles:', error);
       return [];
     }
-
-    console.log(`Found target bottle: ${targetBottle.name}`);
-
-    // Calculate similarity scores for all bottles
-    const scores = new Map<number, number>();
-    
-    this.whiskeyProfiles.forEach(whiskey => {
-      if (!whiskey || whiskey.id === targetBottle!.id) return; // Skip the target bottle and invalid entries
-      
-      // Calculate similarity based on content
-      const contentSimilarity = this.calculateContentSimilarity(targetBottle!, whiskey);
-      
-      // Calculate similarity based on proof - handle undefined values
-      const proofSimilarity = !isNaN(targetBottle!.proof) && !isNaN(whiskey.proof) 
-        ? this.calculateProofSimilarity(targetBottle!.proof, whiskey.proof)
-        : 0;
-      
-      // Calculate similarity based on price - handle undefined values
-      const priceSimilarity = !isNaN(targetBottle!.avg_msrp) && !isNaN(whiskey.avg_msrp)
-        ? this.calculatePriceSimilarity(targetBottle!.avg_msrp, whiskey.avg_msrp)
-        : 0;
-      
-      // Combine scores with weights
-      const score = (
-        contentSimilarity * 0.5 +
-        proofSimilarity * 0.25 +
-        priceSimilarity * 0.25
-      );
-      
-      scores.set(whiskey.id, score);
-    });
-
-    // Sort by score and return top recommendations
-    const recommendations = Array.from(scores.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, count)
-      .map(([id]) => {
-        const whiskey = this.whiskeyProfiles.find(w => w.id === id)!;
-        return {
-          ...whiskey,
-          reasoning: `Similar to ${targetBottle!.name} in terms of ${
-            whiskey.spirit_type === targetBottle!.spirit_type ? 'spirit type, ' : ''
-          }${
-            Math.abs(whiskey.proof - targetBottle!.proof) < 10 ? 'proof range, ' : ''
-          }${
-            Math.abs(whiskey.avg_msrp - targetBottle!.avg_msrp) < 20 ? 'price point, ' : ''
-          }and flavor profile`.replace(/, and/, ' and')
-        };
-      });
-
-    console.log(`Found ${recommendations.length} similar bottles`);
-    return recommendations;
   }
 
   private calculateProofSimilarity(proof1: number, proof2: number): number {
@@ -483,4 +429,4 @@ export class WhiskeyRecommender {
     const diff = Math.abs(price1 - price2);
     return Math.max(0, 1 - diff / 100); // Normalize by $100
   }
-} 
+}
