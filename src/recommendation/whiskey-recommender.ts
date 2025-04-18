@@ -16,6 +16,7 @@ interface WhiskeyProfile {
   age?: number;
   rating?: number;
   reasoning?: string;
+  image_url?: string;
 }
 
 interface UserProfile {

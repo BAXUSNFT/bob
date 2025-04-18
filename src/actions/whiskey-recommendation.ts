@@ -319,6 +319,11 @@ class WhiskeyRecommendationHandler {
       
       response += `   Type: ${rec.spirit_type}\n`;
       
+      // Add image URL
+      if (rec.image_url) {
+        response += `   Image: ${rec.image_url}\n`;
+      }
+      
       // Add reasoning based on the recommendation
       if (rec.reasoning) {
         response += `   Why: ${rec.reasoning}\n`;
