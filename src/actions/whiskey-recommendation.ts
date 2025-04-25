@@ -169,7 +169,9 @@ class WhiskeyRecommendationHandler {
         } else if (requestType === "RECOMMEND") {
           return await this.handleRecommendBottles(username);
         } else if (requestType === "PRICE_FILTER" && !isNaN(maxPrice)) {
-          return await this.handlePriceFilteredRecommendations(maxPrice);
+          const response = await this.handlePriceFilteredRecommendations(maxPrice);
+          // Return non-empty response to prevent language model from generating its own
+          return response || this.getFallbackResponse(requestType);
         } else if (requestType === "INFO" && bottleName) {
           return this.handleBottleInfo(bottleName);
         } else if (requestType === "SIMILAR" && bottleName) {
