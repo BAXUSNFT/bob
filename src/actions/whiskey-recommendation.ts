@@ -87,7 +87,8 @@ class WhiskeyRecommendationHandler {
         Extract the request type from the user's message.
         The message is ${message}
         The possible request types are 'ANALYZE' (for analyzing a collection), 'RECOMMEND' (for recommending bottles), 
-        'INFO' (for information about a specific bottle), 'SIMILAR' (for finding similar bottles), or 'GENERAL' (for general whiskey talk).
+        'INFO' (for information about a specific bottle), 'SIMILAR' (for finding similar bottles), 'PRICE_FILTER' (for finding bottles under a specific price or in a price range),
+        or 'GENERAL' (for general whiskey talk).
         Only respond with the request type, do not include any other text.`;
 
       const requestType = await generateText({
@@ -116,16 +117,18 @@ class WhiskeyRecommendationHandler {
 
       console.log('username', username);
 
-      // For bottle info or similar requests, extract the bottle name
+      // For bottle info, similar requests, or price filter, extract the relevant info
       let bottleName = "";
+      let maxPrice = 0;
+      
       if (requestType === "INFO" || requestType === "SIMILAR") {
         const bottleContext = `
-            Extract the name of the bottle from the user's message.
-            The message is ${message}
-            If the message is asking about a specific bottle or similar bottles, extract the bottle name.
-            For example, if the message is "can you recommend more bottles similar to EH Taylor?", extract "E.H. Taylor".
-            If the message contains "EH Taylor" or "E.H. Taylor", extract it exactly as "E.H. Taylor".
-            Only respond with the bottle name, do not include any other text.`;
+          Extract the name of the bottle from the user's message.
+          The message is ${message}
+          If the message is asking about a specific bottle or similar bottles, extract the bottle name.
+          For example, if the message is "can you recommend more bottles similar to EH Taylor?", extract "E.H. Taylor".
+          If the message contains "EH Taylor" or "E.H. Taylor", extract it exactly as "E.H. Taylor".
+          Only respond with the bottle name, do not include any other text.`;
 
         bottleName = await generateText({
           runtime: runtime,
@@ -140,14 +143,31 @@ class WhiskeyRecommendationHandler {
           .replace(/\s+/g, ' ') // Normalize whitespace
 
         console.log('Extracted bottleName:', bottleName);
+      } else if (requestType === "PRICE_FILTER") {
+        const priceContext = `
+          Extract the maximum price from the user's message.
+          The message is ${message}
+          Look for patterns like "under $X", "less than $X", "below $X", etc.
+          Only respond with the number, do not include any other text or the $ symbol.`;
+
+        const priceStr = await generateText({
+          runtime: runtime,
+          context: priceContext,
+          modelClass: ModelClass.SMALL,
+          stop: ["\n"],
+        });
+
+        maxPrice = parseFloat(priceStr);
+        console.log('Extracted maxPrice:', maxPrice);
       }
 
-      // Process the request based on type
       try {
         if (requestType === "ANALYZE") {
           return await this.handleAnalyzeCollection(username);
         } else if (requestType === "RECOMMEND") {
           return await this.handleRecommendBottles(username);
+        } else if (requestType === "PRICE_FILTER" && !isNaN(maxPrice)) {
+          return await this.handlePriceFilteredRecommendations(maxPrice);
         } else if (requestType === "INFO" && bottleName) {
           return this.handleBottleInfo(bottleName);
         } else if (requestType === "SIMILAR" && bottleName) {
@@ -169,9 +189,11 @@ class WhiskeyRecommendationHandler {
   private getFallbackResponse(requestType: string): string {
     switch (requestType) {
       case "ANALYZE":
-        return "*examines your virtual bar thoughtfully* I can't seem to get a good look at your collection right now. Perhaps we could chat about some of your favorite bottles instead?";
+        return "*adjusts glasses* I'd love to analyze your collection, but I seem to be having trouble accessing it right now. Have you added any bottles to your BoozApp collection yet?";
       case "RECOMMEND":
         return "*pulls out a small notebook* I've got some excellent recommendations in mind, but my notes seem to be a bit jumbled at the moment. What kind of spirits have you been enjoying lately?";
+      case "PRICE_FILTER":
+        return "*adjusts glasses thoughtfully* I'm having trouble filtering by price at the moment. While I sort that out, what kind of flavor profile are you looking for? That might help me suggest some alternatives.";
       case "INFO":
       case "SIMILAR":
         return "*adjusts glasses* I know quite a bit about that bottle, but I seem to be having trouble recalling the specifics. Perhaps you could tell me what you already know about it, and we can discuss from there?";
@@ -519,6 +541,85 @@ class WhiskeyRecommendationHandler {
     } catch (error) {
       console.error("Error handling similar bottles:", error);
       return this.getFallbackResponse("SIMILAR");
+    }
+  }
+
+  // Handle price-filtered recommendations
+  async handlePriceFilteredRecommendations(maxPrice: number): Promise<string> {
+    try {
+      if (!this.isInitialized || !this.recommender) {
+        return "*adjusts glasses* I'm still getting my whiskey knowledge organized. Give me just a moment to set up my recommendation engine...";
+      }
+
+      // Filter bottles by price
+      const affordableBottles = this.bottleDatabase.filter(bottle => 
+        bottle && bottle.avg_msrp && !isNaN(bottle.avg_msrp) && bottle.avg_msrp <= maxPrice
+      );
+
+      if (affordableBottles.length === 0) {
+        return `*adjusts glasses thoughtfully* I'm afraid I don't have any recommendations in my database under $${maxPrice}. Would you like to try a higher price point?`;
+      }
+
+      // Sort by popularity and rating
+      const recommendations = affordableBottles
+        .sort((a, b) => {
+          const scoreA = (a.popularity || 0) + (a.total_score || 0);
+          const scoreB = (b.popularity || 0) + (b.total_score || 0);
+          return scoreB - scoreA;
+        })
+        .slice(0, 3);
+
+      let response = `*studies the shelf thoughtfully, then smiles with confidence*\n\n`;
+      response += `Here are my top recommendations under $${maxPrice}:\n\n`;
+
+      recommendations.forEach((rec, index) => {
+        response += `${index + 1}. **${rec.name?.replace(/^["']|["']$/g, '') || 'Unknown bottle'}**`;
+
+        if (rec.avg_msrp && !isNaN(rec.avg_msrp)) {
+          response += ` - $${rec.avg_msrp.toFixed(2)}`;
+        }
+
+        response += `\n`;
+
+        if (rec.proof && !isNaN(rec.proof)) {
+          response += `   Proof: ${rec.proof}\n`;
+        }
+
+        if (rec.spirit_type) {
+          response += `   Type: ${rec.spirit_type}\n`;
+        }
+
+        // Add image URL
+        if (rec.image_url) {
+          response += `   Image: ${rec.image_url}\n`;
+        }
+
+        // Add community stats
+        if (rec.wishlist_count || rec.vote_count || rec.bar_count) {
+          response += `   Community: `;
+
+          const stats = [];
+          if (rec.wishlist_count) stats.push(`${rec.wishlist_count.toLocaleString()} wishlists`);
+          if (rec.vote_count) stats.push(`${rec.vote_count.toLocaleString()} votes`);
+          if (rec.bar_count) stats.push(`in ${rec.bar_count.toLocaleString()} collections`);
+
+          response += stats.join(', ') + '\n';
+        }
+
+        // Add a description of why this is a good value
+        response += `   Why: A fantastic value at this price point`;
+        if (rec.popularity && rec.popularity > 10000) {
+          response += `, highly rated among whiskey enthusiasts`;
+        }
+        response += `\n\n`;
+      });
+
+      response += `*takes a slow sip from flask* These are some of my favorite bottles in this price range. Would you like to know more about any of them?`;
+
+      return response;
+    } catch (error) {
+      console.error("Error handling price-filtered recommendations:", error);
+      return this.getFallbackResponse("PRICE_FILTER");
     }
   }
 }
