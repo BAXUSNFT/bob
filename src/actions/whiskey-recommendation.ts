@@ -98,6 +98,8 @@ class WhiskeyRecommendationHandler {
         stop: ["\n"],
       });
 
+      elizaLogger.info(`Request type determined as: ${requestType} for message: ${message}`);
+
       console.log('requestType', requestType);
 
       // Get username if specified, otherwise use default
@@ -570,7 +572,7 @@ class WhiskeyRecommendationHandler {
         .slice(0, 3);
 
       let response = `*studies the shelf thoughtfully, then smiles with confidence*\n\n`;
-      response += `Here are my top recommendations under $${maxPrice}:\n\n`;
+      response += `Based on your collection and preferences, here are my top 3 recommendations:\n\n`;
 
       recommendations.forEach((rec, index) => {
         response += `${index + 1}. **${rec.name?.replace(/^["']|["']$/g, '') || 'Unknown bottle'}**`;
