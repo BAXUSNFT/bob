@@ -13,6 +13,7 @@ import fs from "fs";
 import net from "net";
 import path from "path";
 import { fileURLToPath } from "url";
+import { whiskeyRecommendationAction } from "./actions/whiskey-recommendation.ts";
 import { initializeDbCache } from "./cache/index.ts";
 import { character } from "./character.ts";
 import { startChat } from "./chat/index.ts";
@@ -23,8 +24,14 @@ import {
   parseArguments,
 } from "./config/index.ts";
 import { initializeDatabase } from "./database/index.ts";
-import { whiskeyRecommendationAction } from "./actions/whiskey-recommendation.ts";
 import { WebsocketService } from "./services/websocket.ts";
+
+// Set ONNX Runtime thread configuration
+process.env.OMP_NUM_THREADS = "1";  // Limit OpenMP threads
+process.env.MKL_NUM_THREADS = "1";  // Limit MKL threads
+process.env.NUMEXPR_NUM_THREADS = "1";  // Limit NumExpr threads
+process.env.VECLIB_MAXIMUM_THREADS = "1";  // Limit VecLib threads
+process.env.OPENBLAS_NUM_THREADS = "1";  // Limit OpenBLAS threads
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -166,6 +173,7 @@ const startAgents = async () => {
     return startAgent(character, directClient);
   };
 
+  console.log(`Starting server on port ${serverPort}`);
   directClient.start(serverPort);
 
   if (serverPort !== parseInt(settings.SERVER_PORT || "3000")) {
