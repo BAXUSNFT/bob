@@ -58,6 +58,6 @@ COPY --from=builder /app/tsconfig.json /app/
 COPY --from=builder /app/pnpm-lock.yaml /app/
 COPY --from=builder /app/data /app/data
 
-EXPOSE 3000
+EXPOSE 8080
 # Set the command to run the application
 CMD ["pnpm", "start", "--non-interactive"]
