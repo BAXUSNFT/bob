@@ -104,10 +104,6 @@ async function startAgent(character: Character, directClient: DirectClient) {
 
     directClient.registerAgent(runtime);
 
-    const websocketService = WebsocketService.getInstance();
-
-    websocketService.initialize();
-
     // report to console
     elizaLogger.debug(`Started ${character.name} as ${runtime.agentId}`);
 
@@ -145,6 +141,10 @@ const startAgents = async () => {
   const directClient = new DirectClient();
   let serverPort = parseInt(settings.SERVER_PORT || "3000");
   const args = parseArguments();
+
+  // Initialize WebSocket service once before starting agents
+  const websocketService = WebsocketService.getInstance();
+  websocketService.initialize();
 
   let charactersArg = args.characters || args.character;
   let characters = [character];
