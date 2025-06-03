@@ -1,9 +1,4 @@
-import {
-    IAgentRuntime,
-    Service,
-    ServiceType,
-} from "@elizaos/core";
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 
 export class WebsocketService {
     public wss: WebSocketServer | null = null;
@@ -30,11 +25,14 @@ export class WebsocketService {
 
         if (isProduction) {
             this.wss = new WebSocketServer({ port, host: '0.0.0.0' });
+            console.log(JSON.stringify(this.wss));
+            console.log(`WebSocket server initialized ${this.wss?.address()}`);
         } else {
             this.wss = new WebSocketServer({ port });
         }
 
         console.log(`WebSocket server initialized on port ${port}`);
+
 
         this.wss.on('connection', (ws: WebSocket) => {
             console.log('New client connected');
