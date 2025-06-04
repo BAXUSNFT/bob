@@ -32,6 +32,7 @@ process.env.MKL_NUM_THREADS = "1";  // Limit MKL threads
 process.env.NUMEXPR_NUM_THREADS = "1";  // Limit NumExpr threads
 process.env.VECLIB_MAXIMUM_THREADS = "1";  // Limit VecLib threads
 process.env.OPENBLAS_NUM_THREADS = "1";  // Limit OpenBLAS threads
+process.env.ORT_NUM_THREADS = "1";  // Explicitly set ONNX Runtime threads
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -188,7 +189,57 @@ const startAgents = async () => {
   }
 };
 
+// Enhanced error handling and debugging
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', {
+    name: error.name,
+    message: error.message,
+    code: (error as any).code,
+    stack: error.stack
+  });
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM, shutting down gracefully...');
+  try {
+    const websocketService = WebsocketService.getInstance();
+    websocketService.cleanup();
+  } catch (error) {
+    console.error('Error during SIGTERM cleanup:', error);
+  }
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('Received SIGINT, shutting down gracefully...');
+  try {
+    const websocketService = WebsocketService.getInstance();
+    websocketService.cleanup();
+  } catch (error) {
+    console.error('Error during SIGINT cleanup:', error);
+  }
+  process.exit(0);
+});
+
 startAgents().catch((error) => {
-  elizaLogger.error("Unhandled error in startAgents:", error);
+  elizaLogger.error("Unhandled error in startAgents:", {
+    name: error.name,
+    message: error.message,
+    code: error.code,
+    stack: error.stack
+  });
+  try {
+    const websocketService = WebsocketService.getInstance();
+    websocketService.cleanup();
+  } catch (cleanupError) {
+    console.error('Error during cleanup:', cleanupError);
+  }
   process.exit(1);
 });
