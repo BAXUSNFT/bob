@@ -168,6 +168,11 @@ const startAgents = async () => {
     serverPort++;
   }
 
+  directClient.app.get('/health', (req: any, res: any) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+
   // upload some agent functionality into directClient
   directClient.startAgent = async (character: Character) => {
     // wrap it so we don't have to inject directClient later
