@@ -27,12 +27,14 @@ import { initializeDatabase } from "./database/index.ts";
 import { WebsocketService } from "./services/websocket.ts";
 
 // Set ONNX Runtime thread configuration
-process.env.OMP_NUM_THREADS = "1";  // Limit OpenMP threads
-process.env.MKL_NUM_THREADS = "1";  // Limit MKL threads
-process.env.NUMEXPR_NUM_THREADS = "1";  // Limit NumExpr threads
-process.env.VECLIB_MAXIMUM_THREADS = "1";  // Limit VecLib threads
-process.env.OPENBLAS_NUM_THREADS = "1";  // Limit OpenBLAS threads
-process.env.ORT_NUM_THREADS = "1";  // Explicitly set ONNX Runtime threads
+process.env.OMP_NUM_THREADS = “1”; // Limit OpenMP threads
+process.env.MKL_NUM_THREADS = “1"; // Limit MKL threads
+process.env.NUMEXPR_NUM_THREADS = “1”; // Limit NumExpr threads
+process.env.VECLIB_MAXIMUM_THREADS = “1"; // Limit VecLib threads
+process.env.OPENBLAS_NUM_THREADS = “1”; // Limit OpenBLAS threads
+process.env.ORT_NUM_THREADS = “1"; // Explicitly set ONNX Runtime threads
+process.env.ORT_DISABLE_THREAD_AFFINITY = “true”; // Disable thread affinity
+process.env.ONNXRUNTIME_AVOID_FORK = “1"; // Avoid fork-related issues
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
