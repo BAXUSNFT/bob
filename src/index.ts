@@ -27,14 +27,14 @@ import { initializeDatabase } from "./database/index.ts";
 import { WebsocketService } from "./services/websocket.ts";
 
 // Set ONNX Runtime thread configuration
-process.env.OMP_NUM_THREADS = “1”; // Limit OpenMP threads
-process.env.MKL_NUM_THREADS = “1"; // Limit MKL threads
-process.env.NUMEXPR_NUM_THREADS = “1”; // Limit NumExpr threads
-process.env.VECLIB_MAXIMUM_THREADS = “1"; // Limit VecLib threads
-process.env.OPENBLAS_NUM_THREADS = “1”; // Limit OpenBLAS threads
-process.env.ORT_NUM_THREADS = “1"; // Explicitly set ONNX Runtime threads
-process.env.ORT_DISABLE_THREAD_AFFINITY = “true”; // Disable thread affinity
-process.env.ONNXRUNTIME_AVOID_FORK = “1"; // Avoid fork-related issues
+process.env.OMP_NUM_THREADS = "1"; // Limit OpenMP threads
+process.env.MKL_NUM_THREADS = "1"; // Limit MKL threads
+process.env.NUMEXPR_NUM_THREADS = "1"; // Limit NumExpr threads
+process.env.VECLIB_MAXIMUM_THREADS = "1"; // Limit VecLib threads
+process.env.OPENBLAS_NUM_THREADS = "1"; // Limit OpenBLAS threads
+process.env.ORT_NUM_THREADS = "1"; // Explicitly set ONNX Runtime threads
+process.env.ORT_DISABLE_THREAD_AFFINITY = "true"; // Disable thread affinity
+process.env.ONNXRUNTIME_AVOID_FORK = "1"; // Avoid fork-related issues
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,7 +56,7 @@ export function createAgent(
   elizaLogger.success(
     elizaLogger.successesTitle,
     "Creating runtime for character",
-    character.name,
+    character.name
   );
 
   nodePlugin ??= createNodePlugin();
@@ -85,7 +85,7 @@ async function startAgent(character: Character, directClient: DirectClient) {
     character.id ??= stringToUuid(character.name);
     character.username ??= character.name;
 
-    console.log('\ncharacter\n', character);
+    console.log("\ncharacter\n", character);
 
     const token = getTokenForProvider(character.modelProvider, character);
     const dataDir = path.join(__dirname, "../data");
@@ -114,7 +114,7 @@ async function startAgent(character: Character, directClient: DirectClient) {
   } catch (error) {
     elizaLogger.error(
       `Error starting agent for character ${character.name}:`,
-      error,
+      error
     );
     console.error(error);
     throw error;
@@ -170,10 +170,9 @@ const startAgents = async () => {
     serverPort++;
   }
 
-  directClient.app.get('/health', (req: any, res: any) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  directClient.app.get("/health", (req: any, res: any) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
-
 
   // upload some agent functionality into directClient
   directClient.startAgent = async (character: Character) => {
@@ -197,40 +196,40 @@ const startAgents = async () => {
 };
 
 // Enhanced error handling and debugging
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', {
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception:", {
     name: error.name,
     message: error.message,
     code: (error as any).code,
-    stack: error.stack
+    stack: error.stack,
   });
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
   process.exit(1);
 });
 
 // Handle graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('Received SIGTERM, shutting down gracefully...');
+process.on("SIGTERM", () => {
+  console.log("Received SIGTERM, shutting down gracefully...");
   try {
     const websocketService = WebsocketService.getInstance();
     websocketService.cleanup();
   } catch (error) {
-    console.error('Error during SIGTERM cleanup:', error);
+    console.error("Error during SIGTERM cleanup:", error);
   }
   process.exit(0);
 });
 
-process.on('SIGINT', () => {
-  console.log('Received SIGINT, shutting down gracefully...');
+process.on("SIGINT", () => {
+  console.log("Received SIGINT, shutting down gracefully...");
   try {
     const websocketService = WebsocketService.getInstance();
     websocketService.cleanup();
   } catch (error) {
-    console.error('Error during SIGINT cleanup:', error);
+    console.error("Error during SIGINT cleanup:", error);
   }
   process.exit(0);
 });
@@ -240,13 +239,13 @@ startAgents().catch((error) => {
     name: error.name,
     message: error.message,
     code: error.code,
-    stack: error.stack
+    stack: error.stack,
   });
   try {
     const websocketService = WebsocketService.getInstance();
     websocketService.cleanup();
   } catch (cleanupError) {
-    console.error('Error during cleanup:', cleanupError);
+    console.error("Error during cleanup:", cleanupError);
   }
   process.exit(1);
 });
