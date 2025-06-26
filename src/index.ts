@@ -145,10 +145,6 @@ const startAgents = async () => {
   let serverPort = parseInt(settings.SERVER_PORT || "3000");
   const args = parseArguments();
 
-  // Initialize WebSocket service once before starting agents
-  const websocketService = WebsocketService.getInstance();
-  websocketService.initialize();
-
   let charactersArg = args.characters || args.character;
   let characters = [character];
 
@@ -179,6 +175,10 @@ const startAgents = async () => {
     // wrap it so we don't have to inject directClient later
     return startAgent(character, directClient);
   };
+
+  // Initialize WebSocket service before starting HTTP server
+  const websocketService = WebsocketService.getInstance();
+  websocketService.initialize();
 
   console.log(`Starting server on port ${serverPort}`);
   directClient.start(serverPort);
