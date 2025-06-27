@@ -170,6 +170,17 @@ const startAgents = async () => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  directClient.app.get("/agents", (req: any, res: any) => {
+    const agentInfo = characters.map((char) => ({
+      id: char.id || stringToUuid(char.name),
+      name: char.name,
+      username: char.username || char.name,
+      bio: char.bio,
+      modelProvider: char.modelProvider,
+    }));
+    res.json({ agents: agentInfo });
+  });
+
   // upload some agent functionality into directClient
   directClient.startAgent = async (character: Character) => {
     // wrap it so we don't have to inject directClient later
